@@ -3,7 +3,9 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\AuthController;
-use Illuminate\Foundation\Auth\EmailVerificationRequest;
+use App\Models\Report;
+use App\Services\AccessService;
+use App\Models\AuditLog;
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
@@ -18,7 +20,138 @@ Route::prefix('auth')->group(function () {
         Route::post('/email/verification-notification', [AuthController::class, 'sendVerificationEmail']);
     });
 
-     Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
+    Route::get('/email/verify/{id}/{hash}', [AuthController::class, 'verifyEmail'])
         ->middleware(['signed'])
         ->name('verification.verify');
+});
+
+Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
+    Route::get('/dashboard', function (Request $request) {
+        AuditLog::create([
+            'user_id' => $request->user()->id,
+            'action' => 'admin.dashboard_view',
+            'entity_type' => 'admin',
+            'entity_id' => null,
+            'metadata' => [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+            ],
+        ]);
+
+        return response()->json([
+            'message' => 'Admin dashboard',
+        ]);
+    });
+
+    Route::get('/users', function () {
+        return response()->json([
+            'message' => 'Manage users',
+        ]);
+    });
+
+    Route::post('/reports', function () {
+        return response()->json([
+            'message' => 'Create report',
+        ]);
+    });
+
+    Route::post('/plans', function () {
+        return response()->json([
+            'message' => 'Create plan',
+        ]);
+    });
+});
+
+Route::get('/reports/{report}/preview', function (Report $report) {
+    return response()->json([
+        'message' => 'Aperçu gratuit',
+        'report' => $report->only(['id', 'title', 'summary']),
+        'preview_pages' => [1, 2, 3],
+    ]);
+});
+
+Route::middleware(['auth:sanctum'])->get('/reports/{report}/access', function (
+    Request $request,
+    Report $report,
+    AccessService $accessService
+) {
+    $user = $request->user();
+
+    if (! $accessService->canViewReport($user, $report)) {
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'report.view_denied',
+            'entity_type' => 'report',
+            'entity_id' => $report->id,
+            'metadata' => [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'reason' => 'no_access',
+                'access_type' => 'preview_only',
+            ],
+        ]);
+
+        return response()->json([
+            'message' => 'Accès refusé',
+            'access' => 'preview_only',
+        ], 403);
+    }
+
+    AuditLog::create([
+        'user_id' => $user->id,
+        'action' => 'report.view',
+        'entity_type' => 'report',
+        'entity_id' => $report->id,
+        'metadata' => [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'access_type' => 'full',
+        ],
+    ]);
+
+    return response()->json([
+        'message' => 'Accès complet autorisé',
+        'access' => 'full',
+    ]);
+});
+
+Route::middleware(['auth:sanctum'])->get('/reports/{report}/download', function (
+    Request $request,
+    Report $report,
+    AccessService $accessService
+) {
+    $user = $request->user();
+
+    if (! $accessService->canDownloadReport($user, $report)) {
+        AuditLog::create([
+            'user_id' => $user->id,
+            'action' => 'report.download_denied',
+            'entity_type' => 'report',
+            'entity_id' => $report->id,
+            'metadata' => [
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent(),
+                'reason' => 'plan_not_allowed',
+            ],
+        ]);
+
+        return response()->json([
+            'message' => 'Téléchargement non autorisé pour votre plan.',
+        ], 403);
+    }
+
+    AuditLog::create([
+        'user_id' => $user->id,
+        'action' => 'report.download',
+        'entity_type' => 'report',
+        'entity_id' => $report->id,
+        'metadata' => [
+            'ip' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ],
+    ]);
+
+    return response()->json([
+        'message' => 'Téléchargement autorisé.',
+    ]);
 });

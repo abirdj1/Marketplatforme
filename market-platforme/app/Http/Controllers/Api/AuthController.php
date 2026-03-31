@@ -27,7 +27,7 @@ class AuthController extends Controller
             'password' => (string) $request->password,
         ]);
 
-
+ $user->assignRole('user');
 
         event(new Registered($user));
 
