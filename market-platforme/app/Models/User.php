@@ -41,4 +41,25 @@ public function entitlements()
 {
     return $this->hasMany(\App\Models\Entitlement::class);
 }
+public function preference()
+{
+    return $this->hasOne(UserPreference::class);
+}
+
+public function searchHistories()
+{
+    return $this->hasMany(SearchHistory::class);
+}
+
+public function reportViews()
+{
+    return $this->hasMany(ReportView::class);
+}
+
+public function downloadHistories()
+{
+    return $this->hasMany(DownloadHistory::class);
+}
+
+
 }

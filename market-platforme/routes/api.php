@@ -2,10 +2,24 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Foundation\Auth\EmailVerificationRequest;
+
 use App\Http\Controllers\Api\AuthController;
+use App\Http\Controllers\Api\ProfileController;
+
 use App\Models\Report;
-use App\Services\AccessService;
 use App\Models\AuditLog;
+use App\Models\SearchHistory;
+use App\Models\ReportView;
+use App\Models\DownloadHistory;
+
+use App\Services\AccessService;
+
+/*
+|--------------------------------------------------------------------------
+| Authentication Routes
+|--------------------------------------------------------------------------
+*/
 
 Route::prefix('auth')->group(function () {
     Route::post('/register', [AuthController::class, 'register']);
@@ -24,6 +38,12 @@ Route::prefix('auth')->group(function () {
         ->middleware(['signed'])
         ->name('verification.verify');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Admin Routes
+|--------------------------------------------------------------------------
+*/
 
 Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(function () {
     Route::get('/dashboard', function (Request $request) {
@@ -49,18 +69,52 @@ Route::middleware(['auth:sanctum', 'role:admin'])->prefix('admin')->group(functi
         ]);
     });
 
-    Route::post('/reports', function () {
+    Route::post('/reports', function (Request $request) {
         return response()->json([
             'message' => 'Create report',
         ]);
     });
 
-    Route::post('/plans', function () {
+    Route::post('/plans', function (Request $request) {
         return response()->json([
             'message' => 'Create plan',
         ]);
     });
 });
+
+/*
+|--------------------------------------------------------------------------
+| Search Route + Search History
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth:sanctum'])->get('/search', function (Request $request) {
+    SearchHistory::create([
+        'user_id' => $request->user()->id,
+        'query' => $request->query('q'),
+        'filters' => [
+            'sector' => $request->query('sector'),
+            'country' => $request->query('country'),
+            'period' => $request->query('period'),
+        ],
+    ]);
+
+    return response()->json([
+        'message' => 'Recherche enregistrée',
+        'query' => $request->query('q'),
+        'filters' => [
+            'sector' => $request->query('sector'),
+            'country' => $request->query('country'),
+            'period' => $request->query('period'),
+        ],
+    ]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Report Preview
+|--------------------------------------------------------------------------
+*/
 
 Route::get('/reports/{report}/preview', function (Report $report) {
     return response()->json([
@@ -69,6 +123,12 @@ Route::get('/reports/{report}/preview', function (Report $report) {
         'preview_pages' => [1, 2, 3],
     ]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Report Access + View History + Audit
+|--------------------------------------------------------------------------
+*/
 
 Route::middleware(['auth:sanctum'])->get('/reports/{report}/access', function (
     Request $request,
@@ -97,6 +157,12 @@ Route::middleware(['auth:sanctum'])->get('/reports/{report}/access', function (
         ], 403);
     }
 
+    ReportView::create([
+        'user_id' => $user->id,
+        'report_id' => $report->id,
+        'viewed_at' => now(),
+    ]);
+
     AuditLog::create([
         'user_id' => $user->id,
         'action' => 'report.view',
@@ -114,6 +180,12 @@ Route::middleware(['auth:sanctum'])->get('/reports/{report}/access', function (
         'access' => 'full',
     ]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Report Download + Download History + Audit
+|--------------------------------------------------------------------------
+*/
 
 Route::middleware(['auth:sanctum'])->get('/reports/{report}/download', function (
     Request $request,
@@ -140,6 +212,12 @@ Route::middleware(['auth:sanctum'])->get('/reports/{report}/download', function 
         ], 403);
     }
 
+    DownloadHistory::create([
+        'user_id' => $user->id,
+        'report_id' => $report->id,
+        'downloaded_at' => now(),
+    ]);
+
     AuditLog::create([
         'user_id' => $user->id,
         'action' => 'report.download',
@@ -154,4 +232,22 @@ Route::middleware(['auth:sanctum'])->get('/reports/{report}/download', function 
     return response()->json([
         'message' => 'Téléchargement autorisé.',
     ]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Profile Routes
+|--------------------------------------------------------------------------
+*/
+
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/me', [ProfileController::class, 'show']);
+    Route::patch('/me', [ProfileController::class, 'update']);
+
+    Route::get('/me/preferences', [ProfileController::class, 'preferences']);
+    Route::patch('/me/preferences', [ProfileController::class, 'updatePreferences']);
+
+    Route::get('/me/history/searches', [ProfileController::class, 'searchHistory']);
+    Route::get('/me/history/views', [ProfileController::class, 'viewHistory']);
+    Route::get('/me/history/downloads', [ProfileController::class, 'downloadHistory']);
 });
